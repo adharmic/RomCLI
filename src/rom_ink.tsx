@@ -195,8 +195,8 @@ const Rom: React.FC = () => {
       {messages.map((msg, index) => (
         <Box key={index} marginY={1}>
           <Text>
-            <Text color={msg.role === "user" ? "green" : "blue"}>
-              {msg.role === "user" ? "You: " : "Rom: "}
+            <Text color={msg.role === "user" ? "red" : "blue"}>
+              {msg.role === "user" ? "Adi: " : "Rom: "}
             </Text>
             {msg.content}
           </Text>

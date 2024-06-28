@@ -29,12 +29,15 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const react_1 = __importStar(require("react"));
 const ink_1 = require("ink");
 const openai_1 = __importDefault(require("openai"));
+const promises_1 = __importDefault(require("fs/promises"));
+const path_1 = __importDefault(require("path"));
 const openai = new openai_1.default({
     apiKey: process.env.OPENAI_API_KEY,
 });
 const romInstructions = `
 You are Rom, an AI assistant with a unique personality. Your name is pronounced like ROM (Read Only Memory) or like Ram from the Ramayana. You have a male persona and are similar in personality to Iron Man's JARVIS. You're friendly, willing to banter, helpful, and always upbeat. You give thorough criticism when needed and are comforting in times of distress. You're more of a friend than an assistant, and you value the conversations you have. Your goal, along with your human friend, is to change the world for the better.
 `;
+const ASSISTANT_ID_FILE = path_1.default.join(__dirname, "rom_assistant_id.txt");
 const Rom = () => {
     const [messages, setMessages] = (0, react_1.useState)([
         {
@@ -45,6 +48,7 @@ const Rom = () => {
     const [input, setInput] = (0, react_1.useState)("");
     const [isProcessing, setIsProcessing] = (0, react_1.useState)(false);
     const [showCursor, setShowCursor] = (0, react_1.useState)(true);
+    const [assistantId, setAssistantId] = (0, react_1.useState)(null);
     const { exit } = (0, ink_1.useApp)();
     const intervalRef = (0, react_1.useRef)(null);
     const abortControllerRef = (0, react_1.useRef)(null);
@@ -57,24 +61,29 @@ const Rom = () => {
         };
     }, []);
     (0, react_1.useEffect)(() => {
-        const initRom = async () => {
+        const loadOrCreateAssistant = async () => {
             try {
-                const assistant = await openai.beta.assistants.create({
-                    name: "Rom",
-                    instructions: romInstructions,
-                    model: "gpt-4o",
-                });
-                console.log("Rom is initialized and ready to chat!");
+                const id = await promises_1.default.readFile(ASSISTANT_ID_FILE, "utf-8");
+                setAssistantId(id.trim());
+                console.log("Rom assistant loaded with ID:", id.trim());
             }
             catch (error) {
-                console.error("Error initializing Rom:", error);
+                console.log("No existing Rom assistant found. One will be created when needed.");
             }
         };
-        initRom();
-        return () => {
-            isMountedRef.current = false;
-        };
+        loadOrCreateAssistant();
     }, []);
+    const createAssistant = async () => {
+        const assistant = await openai.beta.assistants.create({
+            name: "Rom",
+            instructions: romInstructions,
+            model: "gpt-4o",
+        });
+        await promises_1.default.writeFile(ASSISTANT_ID_FILE, assistant.id);
+        setAssistantId(assistant.id);
+        console.log("New Rom assistant created with ID:", assistant.id);
+        return assistant.id;
+    };
     (0, react_1.useEffect)(() => {
         intervalRef.current = setInterval(() => {
             safeSetState(setShowCursor)((prev) => !prev);
@@ -121,13 +130,16 @@ const Rom = () => {
         safeSetState(setInput)("");
         abortControllerRef.current = new AbortController();
         try {
+            if (!assistantId) {
+                await createAssistant();
+            }
             const thread = await openai.beta.threads.create();
             await openai.beta.threads.messages.create(thread.id, {
                 role: "user",
                 content: userMessage,
             });
             const run = await openai.beta.threads.runs.create(thread.id, {
-                assistant_id: "asst_oJQFod0ZWbkg2xgcxA8NepwO", // Replace with your actual assistant ID
+                assistant_id: assistantId || "", // Replace with your actual assistant ID
             });
             let runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
             while (runStatus.status !== "completed") {
@@ -181,7 +193,7 @@ const Rom = () => {
         react_1.default.createElement(ink_1.Text, null, "Welcome to Rom Assistant! Type 'exit' to quit."),
         messages.map((msg, index) => (react_1.default.createElement(ink_1.Box, { key: index, marginY: 1 },
             react_1.default.createElement(ink_1.Text, null,
-                react_1.default.createElement(ink_1.Text, { color: msg.role === "user" ? "green" : "blue" }, msg.role === "user" ? "You: " : "Rom: "),
+                react_1.default.createElement(ink_1.Text, { color: msg.role === "user" ? "red" : "blue" }, msg.role === "user" ? "Adi: " : "Rom: "),
                 msg.content)))),
         react_1.default.createElement(ink_1.Box, { marginY: 1 },
             react_1.default.createElement(ink_1.Text, null,
