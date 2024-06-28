@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Box, Text, useInput, useApp } from "ink";
 import OpenAI from "openai";
+import fs from "fs/promises";
+import path from "path";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -15,6 +17,7 @@ type Message = {
   content: string;
 };
 type SetStateAction<S> = S | ((prevState: S) => S);
+const ASSISTANT_ID_FILE = path.join(__dirname, "rom_assistant_id.txt");
 
 const Rom: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([
@@ -26,6 +29,7 @@ const Rom: React.FC = () => {
   const [input, setInput] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [showCursor, setShowCursor] = useState(true);
+  const [assistantId, setAssistantId] = useState<string | null>(null);
   const { exit } = useApp();
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -43,24 +47,31 @@ const Rom: React.FC = () => {
   );
 
   useEffect(() => {
-    const initRom = async () => {
+    const loadOrCreateAssistant = async () => {
       try {
-        const assistant = await openai.beta.assistants.create({
-          name: "Rom",
-          instructions: romInstructions,
-          model: "gpt-4o",
-        });
-        console.log("Rom is initialized and ready to chat!");
+        const id = await fs.readFile(ASSISTANT_ID_FILE, "utf-8");
+        setAssistantId(id.trim());
+        console.log("Rom assistant loaded with ID:", id.trim());
       } catch (error) {
-        console.error("Error initializing Rom:", error);
+        console.log(
+          "No existing Rom assistant found. One will be created when needed."
+        );
       }
     };
-    initRom();
-
-    return () => {
-      isMountedRef.current = false;
-    };
+    loadOrCreateAssistant();
   }, []);
+
+  const createAssistant = async () => {
+    const assistant = await openai.beta.assistants.create({
+      name: "Rom",
+      instructions: romInstructions,
+      model: "gpt-4o",
+    });
+    await fs.writeFile(ASSISTANT_ID_FILE, assistant.id);
+    setAssistantId(assistant.id);
+    console.log("New Rom assistant created with ID:", assistant.id);
+    return assistant.id;
+  };
 
   useEffect(() => {
     intervalRef.current = setInterval(() => {
@@ -112,6 +123,9 @@ const Rom: React.FC = () => {
     abortControllerRef.current = new AbortController();
 
     try {
+      if (!assistantId) {
+        await createAssistant();
+      }
       const thread = await openai.beta.threads.create();
       await openai.beta.threads.messages.create(thread.id, {
         role: "user",
@@ -119,7 +133,7 @@ const Rom: React.FC = () => {
       });
 
       const run = await openai.beta.threads.runs.create(thread.id, {
-        assistant_id: "asst_oJQFod0ZWbkg2xgcxA8NepwO", // Replace with your actual assistant ID
+        assistant_id: assistantId || "", // Replace with your actual assistant ID
       });
 
       let runStatus = await openai.beta.threads.runs.retrieve(
